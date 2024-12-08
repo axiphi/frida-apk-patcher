@@ -30,7 +30,7 @@ import re
 
 def find_smali_folders(root_folder: str) -> list:
     # Regular expression to match folder names like smali, smali_classes2, smali_classes3, etc.
-    smali_pattern = re.compile(r'^smali(_classes\d+)?$')
+    smali_pattern = re.compile(r"^smali(_classes\d+)?$")
 
     smali_folders = []
 
@@ -44,8 +44,14 @@ def find_smali_folders(root_folder: str) -> list:
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--apk', action='store', dest='apk_path', default='', help='''(absolute) path to APK''')
-parser.add_argument('-v', action='version', version='APK Builder v0.1')
+parser.add_argument(
+    "--apk",
+    action="store",
+    dest="apk_path",
+    default="",
+    help="""(absolute) path to APK""",
+)
+parser.add_argument("-v", action="version", version="APK Builder v0.1")
 
 if len(sys.argv) < 3:
     parser.print_help()
@@ -103,11 +109,17 @@ try:
 
     print("[I] Expanding APK...")
     apk_dump = subprocess.check_output(["aapt", "dump", "badging", apk_path]).decode()
-    apk_permissions = subprocess.check_output(["aapt", "dump", "permissions", apk_path]).decode()
+    apk_permissions = subprocess.check_output(
+        ["aapt", "dump", "permissions", apk_path]
+    ).decode()
     package_name = apk_dump.split("package: name=")[1].split(" ")[0].strip("'\"\n\t ")
     manifest_file_path = os.path.join(WORK_DIR, package_name, "AndroidManifest.xml")
     try:
-        launchable_activity = apk_dump.split("launchable-activity: name=")[1].split(" ")[0].strip("'\"\n\t ")
+        launchable_activity = (
+            apk_dump.split("launchable-activity: name=")[1]
+            .split(" ")[0]
+            .strip("'\"\n\t ")
+        )
     except IndexError:
         print("No launchable activity found")
         sys.exit(1)
@@ -121,8 +133,9 @@ try:
     smali_class_folders = find_smali_folders(os.path.join(WORK_DIR, package_name))
     launchable_activity_path = None
     for smali_class_folder in smali_class_folders:
-        launchable_activity_smali_path = os.path.join(smali_class_folder,
-                                                      launchable_activity.replace(".", "/") + ".smali")
+        launchable_activity_smali_path = os.path.join(
+            smali_class_folder, launchable_activity.replace(".", "/") + ".smali"
+        )
         if os.path.isfile(launchable_activity_smali_path):
             launchable_activity_path = launchable_activity_smali_path
 
@@ -132,14 +145,16 @@ try:
 
     if "uses-permission: name='android.permission.INTERNET'" not in apk_permissions:
         print("[I] APK needs INTERNET permission")
-        with codecs.open(manifest_file_path, 'r', 'utf-8') as f:
+        with codecs.open(manifest_file_path, "r", "utf-8") as f:
             manifest_file_contents = f.readlines()
 
         for line_num in range(0, len(manifest_file_contents)):
             if "android.permission.INTERNET" in manifest_file_contents[line_num]:
-                manifest_file_contents.insert(line_num,
-                                              "    <uses-permission android:name=\"android.permission.INTERNET\"/>\n")
-                with codecs.open(manifest_file_path, 'w', 'utf-8') as f:
+                manifest_file_contents.insert(
+                    line_num,
+                    '    <uses-permission android:name="android.permission.INTERNET"/>\n',
+                )
+                with codecs.open(manifest_file_path, "w", "utf-8") as f:
                     manifest_file_contents = "".join(manifest_file_contents)
                     f.write(manifest_file_contents)
                 break
@@ -157,24 +172,33 @@ try:
             new_network_file.write(network_file.read())
 
     if os.path.isfile(manifest_file_path):
-        ElementTree.register_namespace("android", "http://schemas.android.com/apk/res/android")
+        ElementTree.register_namespace(
+            "android", "http://schemas.android.com/apk/res/android"
+        )
 
         tree = ElementTree.parse(manifest_file_path)
         if tree is not None:
             tree_root = tree.getroot()
             if tree_root is not None:
                 application = tree_root.find("application")
-                application.set("{http://schemas.android.com/apk/res/android}networkSecurityConfig",
-                                "@xml/network_security_config")
-                application.set("{http://schemas.android.com/apk/res/android}extractNativeLibs",
-                                "true")
+                application.set(
+                    "{http://schemas.android.com/apk/res/android}networkSecurityConfig",
+                    "@xml/network_security_config",
+                )
+                application.set(
+                    "{http://schemas.android.com/apk/res/android}extractNativeLibs",
+                    "true",
+                )
+                application.set("android:debuggable", "true")
 
                 with open(manifest_file_path, "wb") as xml_file:
-                    xml_file.write('<?xml version="1.0" encoding="utf-8" standalone="no"?>'.encode())
+                    xml_file.write(
+                        '<?xml version="1.0" encoding="utf-8" standalone="no"?>'.encode()
+                    )
                     xml_file.write(ElementTree.tostring(tree_root))
 
     print("[I] Searching .smali")
-    with codecs.open(launchable_activity_path, 'r', 'utf-8') as f:
+    with codecs.open(launchable_activity_path, "r", "utf-8") as f:
         file_contents = f.readlines()
 
     for line in range(0, len(file_contents)):
@@ -196,7 +220,10 @@ try:
                 constructor_end = cursor - 1
                 break
         for cursor in range(marker, constructor_end):
-            if ".locals" in file_contents[cursor] or ".prologue" in file_contents[cursor]:
+            if (
+                ".locals" in file_contents[cursor]
+                or ".prologue" in file_contents[cursor]
+            ):
                 prologue_start = cursor
                 marker = cursor + 1
 
@@ -214,7 +241,7 @@ try:
         renegerated_smali = header_block + SMALI_DIRECT_METHODS + footer_block
 
     print("[I] Patching .smali")
-    with codecs.open(launchable_activity_path, 'w', 'utf-8') as f:
+    with codecs.open(launchable_activity_path, "w", "utf-8") as f:
         f.write(renegerated_smali)
 
     print("[I] Injecting libs")
@@ -226,19 +253,38 @@ try:
 
     print("[I] Building APK")
     shutil.rmtree(os.path.join(WORK_DIR, package_name, "original/META-INF"))
-    build_apk_output = subprocess.check_output(["apktool", "build", os.path.join(WORK_DIR, package_name)])
+    build_apk_output = subprocess.check_output(
+        ["apktool", "build", os.path.join(WORK_DIR, package_name)]
+    )
 
-    new_apk_path = "%s/%s.apk" % (os.path.join(WORK_DIR, package_name, "dist"), package_name)
-    aligned_apk_path = "%s/%s-zipaligned.apk" % (os.path.join(WORK_DIR, package_name, "dist"), package_name)
-    signed_apk_path = "%s/%s-zipaligned-signed.apk" % (os.path.join(WORK_DIR, package_name, "dist"), package_name)
+    new_apk_path = "%s/%s.apk" % (
+        os.path.join(WORK_DIR, package_name, "dist"),
+        package_name,
+    )
+    aligned_apk_path = "%s/%s-zipaligned.apk" % (
+        os.path.join(WORK_DIR, package_name, "dist"),
+        package_name,
+    )
+    signed_apk_path = "%s/%s-zipaligned-signed.apk" % (
+        os.path.join(WORK_DIR, package_name, "dist"),
+        package_name,
+    )
     renamed_apk_path = "%s/%s.apk" % (
-        os.path.join(WORK_DIR, package_name, "dist"), os.path.basename(apk_path).split(".apk")[0] + "-appmon")
-    appmon_apk_path = os.path.join(os.getcwd(), os.path.basename(apk_path).split(".apk")[0] + "-appmon.apk")
+        os.path.join(WORK_DIR, package_name, "dist"),
+        os.path.basename(apk_path).split(".apk")[0] + "-appmon",
+    )
+    appmon_apk_path = os.path.join(
+        os.getcwd(), os.path.basename(apk_path).split(".apk")[0] + "-appmon.apk"
+    )
 
     print("[I] Aligning APK")
-    subprocess.check_output(["zipalign", "-v", "-p", "-f", "4", new_apk_path, aligned_apk_path])
+    subprocess.check_output(
+        ["zipalign", "-v", "-p", "-f", "4", new_apk_path, aligned_apk_path]
+    )
 
-    align_verify = subprocess.check_output(["zipalign", "-v", "-c", "4", aligned_apk_path]).decode()
+    align_verify = subprocess.check_output(
+        ["zipalign", "-v", "-c", "4", aligned_apk_path]
+    ).decode()
     align_verify.strip(" \r\n\t")
     if "Verification succesful" not in align_verify:
         print("[E] alignment verification failed")
@@ -248,15 +294,32 @@ try:
     #
     print("[I] Signing APK")
     sign_status = subprocess.check_output(
-        ["apksigner", "sign", "--verbose", "--ks", "appmon.keystore", "--ks-pass", "pass:appmon", "--out",
-         signed_apk_path, aligned_apk_path]).decode()
+        [
+            "apksigner",
+            "sign",
+            "--verbose",
+            "--ks",
+            "appmon.keystore",
+            "--ks-pass",
+            "pass:appmon",
+            "--out",
+            signed_apk_path,
+            aligned_apk_path,
+        ]
+    ).decode()
 
     if "Signed" not in sign_status:
         print("[E] APK signing error %s" % sign_status)
 
-    sign_verify = subprocess.check_output(["apksigner", "verify", "--verbose", signed_apk_path]).decode()
+    sign_verify = subprocess.check_output(
+        ["apksigner", "verify", "--verbose", signed_apk_path]
+    ).decode()
 
-    if "Verified using v1 scheme (JAR signing): true" not in sign_verify and "Verified using v2 scheme (APK Signature Scheme v2): true" not in sign_verify:
+    if (
+        "Verified using v1 scheme (JAR signing): true" not in sign_verify
+        and "Verified using v2 scheme (APK Signature Scheme v2): true"
+        not in sign_verify
+    ):
         print(sign_verify)
     else:
         print("[I] APK signature verified")
