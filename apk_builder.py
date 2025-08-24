@@ -126,7 +126,8 @@ try:
 
     new_apk_path = WORK_DIR + "/" + package_name + ".apk"
     subprocess.call(["cp", apk_path, new_apk_path])
-    subprocess.call(["apktool", "-q", "-f", "d", new_apk_path])
+    # subprocess.call(["apktool", "-q", "-f", "d", new_apk_path])
+    subprocess.call(["apktool", "d", new_apk_path])
     subprocess.call(["mv", package_name, WORK_DIR])
 
     # support for multi-dex
