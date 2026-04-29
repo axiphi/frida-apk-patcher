@@ -91,8 +91,8 @@ LIB_FILE_PATH = "lib.zip"
 
 lib_dir = ""
 marker = 0
-method_start = 0
-method_end = 0
+method_section_start = 0
+method_section_end = 0
 constructor_start = 0
 constructor_end = 0
 prologue_start = 0
@@ -204,44 +204,70 @@ try:
 
     for line in range(0, len(file_contents)):
         if "# direct methods" in file_contents[line]:
-            method_start = line
+            method_section_start = line
         if "# virtual methods" in file_contents[line]:
-            method_end = line
+            method_section_end = line
 
-    marker = method_start + 1
+    marker = method_section_start + 1
 
-    if (method_end - method_start) > 1:
-        for cursor in range(marker, method_end):
-            if ".method static constructor <clinit>()V" in file_contents[cursor]:
+    constructor_start = None
+    constructor_end = None
+    constructor_locals_line = None
+    constructor_inject_target = None
+    if (method_section_end - method_section_start) > 1:
+        for cursor in range(method_section_start, method_section_end):
+            if ".method public constructor <init>()V" in file_contents[cursor]:
                 constructor_start = cursor
-                marker = constructor_start - 1
                 break
-        for cursor in range(marker, method_end):
-            if ".end method" in file_contents[cursor]:
-                constructor_end = cursor - 1
-                break
-        for cursor in range(marker, constructor_end):
-            if (
-                ".locals" in file_contents[cursor]
-                or ".prologue" in file_contents[cursor]
-            ):
-                prologue_start = cursor
-                marker = cursor + 1
 
-    header_range = list(range(0, marker))
-    footer_range = list(range(marker, len(file_contents)))
+        if constructor_start is not None:
+            for cursor in range(constructor_start, method_section_end):
+                if ".end method" in file_contents[cursor]:
+                    constructor_end = cursor
+                    break
 
-    for line_num in header_range:
-        header_block += file_contents[line_num]
-    for line_num in footer_range:
-        footer_block += file_contents[line_num]
+            if constructor_end is None:
+                print("Failed to find end of constructor of main activity")
+                sys.exit(1)
 
-    if prologue_start > 1:
+            for cursor in range(constructor_start, constructor_end):
+                if ".locals" in file_contents[cursor]:
+                    constructor_locals_line = cursor
+                    constructor_inject_target = cursor + 1
+                elif ".prologue" in file_contents[cursor]:
+                    constructor_inject_target = cursor + 1
+
+    if constructor_start is not None:
+        if constructor_locals_line is None or constructor_inject_target is None:
+            print("Failed to find .locals or .prologue instruction in constructor of main activity")
+            sys.exit(1)
+
+        def locals_val_replacer(match):
+            return str(int(match.group()) + 1)
+
+        file_contents[constructor_locals_line] = re.sub(r'\d+', locals_val_replacer, file_contents[constructor_locals_line])
+
+        header_block = ""
+        for line_num in range(0, constructor_inject_target):
+            header_block += file_contents[line_num]
+
+        footer_block = ""
+        for line_num in range(constructor_inject_target, len(file_contents)):
+            footer_block += file_contents[line_num]
+
         renegerated_smali = header_block + SMALI_PROLOGUE + footer_block
     else:
+        header_block = ""
+        for line_num in range(0, method_section_start + 1):
+            header_block += file_contents[line_num]
+
+        footer_block = ""
+        for line_num in range(method_section_start + 1, len(file_contents)):
+            footer_block += file_contents[line_num]
+
         renegerated_smali = header_block + SMALI_DIRECT_METHODS + footer_block
 
-    print("[I] Patching .smali")
+    print(f"[I] Patching {launchable_activity_path}")
     with codecs.open(launchable_activity_path, "w", "utf-8") as f:
         f.write(renegerated_smali)
 
